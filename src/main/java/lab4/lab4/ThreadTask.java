@@ -1,37 +1,43 @@
 package lab4.lab4;
 
-import javafx.application.Platform;
+import java.util.concurrent.Callable;
 
-public class ThreadTask implements Runnable {
+public class ThreadTask implements Callable<Long> {
     private final ThreadInfo threadInfo;
-    private final Runnable runnable;
+    private final long initialSize;
+    private final Runnable onUpdate;
 
-
-    public ThreadTask(ThreadInfo threadInfo, Runnable _runnable) {
+    public ThreadTask(ThreadInfo threadInfo, long initialSize, Runnable onUpdate) {
         this.threadInfo = threadInfo;
-        runnable = _runnable;
+        this.initialSize = initialSize;
+        this.onUpdate = onUpdate;
     }
 
     @Override
-    public void run() {
+    public Long call() {
         try {
-            Platform.runLater(() -> threadInfo.setStatus("Running"));
-            long startTime = System.currentTimeMillis();
+            threadInfo.setStatus("Running");
+            onUpdate.run();
 
-            // Імітація ресурсозатратної операції
-            Thread.sleep(1000 + (int) (Math.random() * 2000));
-            long result = 1000 + (int) (Math.random() * 1000); // Результат обчислення
+            long increment = (long) (initialSize * 0.1);
+            increment += (int) (Math.random() * increment);
 
-            long executionTime = System.currentTimeMillis() - startTime;
+            long executionTime = initialSize + increment; // Використовуємо increment як час очікування
 
-            Platform.runLater(() -> {
-                threadInfo.setStatus("Completed");
-                threadInfo.setExecutionTime(executionTime);
-                threadInfo.setResult(result);
-                runnable.run();
-            });
+            Thread.sleep(increment);
+
+            long newSize = initialSize + increment;
+            threadInfo.setExecutionTime(increment);
+            threadInfo.setResult(newSize);
+
+            threadInfo.setStatus("Completed");
+            onUpdate.run();
+            return initialSize;
         } catch (InterruptedException e) {
+            threadInfo.setStatus("Interrupted");
+            onUpdate.run();
             Thread.currentThread().interrupt();
+            return 0L;
         }
     }
 }

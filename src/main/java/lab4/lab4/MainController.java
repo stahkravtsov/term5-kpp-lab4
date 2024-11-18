@@ -37,7 +37,9 @@ public class MainController {
     @FXML
     private Label mainThreadStatusLabel;
 
-    private final ObservableList<ThreadInfo> threadInfoList = FXCollections.observableArrayList();
+    private ObservableList<ThreadInfo> threadInfoList = FXCollections.observableArrayList();
+    long totalSize = 10_000;
+    long tempTotalSize = 0;
 
     @FXML
     private void initialize() {
@@ -52,44 +54,47 @@ public class MainController {
         startButton.setOnAction(event -> startProcessing());
     }
 
-    @FXML
-    public void onHelloButtonClick()
-    {
-        startProcessing();
-    }
-
     private void startProcessing() {
         int threadCount = threadCountSpinner.getValue();
-        threadInfoList.clear();
+
         mainThreadStatusLabel.setText("Main Thread Status: Running...");
 
-        ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
-        List<Future<?>> futures = new ArrayList<>();
+        processIteration(threadCount);
+        totalSize = threadInfoList.stream().mapToLong(ThreadInfo::getResult).sum();
+    }
 
+    private void processIteration(int threadCount) {
+        threadInfoList.clear();
+        ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
+        List<Future<Long>> futures = new ArrayList<>();
+
+        long sizePerThread = totalSize / threadCount;
         long startTime = System.currentTimeMillis();
+        tempTotalSize = 0;
 
         for (int i = 0; i < threadCount; i++) {
             ThreadInfo threadInfo = new ThreadInfo("Thread " + (i + 1));
             threadInfoList.add(threadInfo);
 
-            // Завдання з поверненням результату
-            Future<?> future = executorService.submit(() -> {
-                ThreadTask task = new ThreadTask(threadInfo, () -> Platform.runLater(() -> threadsTable.refresh()));
-                task.run(); // Запуск завдання
-            });
+            ThreadTask task = new ThreadTask(threadInfo, sizePerThread, () -> Platform.runLater(threadsTable::refresh));
 
-            futures.add(future);
+            futures.add(executorService.submit(task));
         }
 
-        // Окремий потік для очікування завершення всіх потоків
         new Thread(() -> {
             try {
-                for (Future<?> future : futures) {
-                    future.get(); // Очікуємо завершення кожного потоку
+                for (int i = 0; i < threadCount; i++) {
+                    long result = futures.get(i).get();
+                    increment(result);
+                    ThreadInfo threadInfo = threadInfoList.get(i);
+                    threadInfo.setResult(result);
+                    Platform.runLater(threadsTable::refresh);
                 }
-                long totalTime = System.currentTimeMillis() - startTime;
 
-                Platform.runLater(() -> mainThreadStatusLabel.setText("Main Thread Status: Completed in " + totalTime + " ms"));
+                long endTime = -startTime + System.currentTimeMillis();
+
+                totalSize = tempTotalSize;
+                Platform.runLater(() -> mainThreadStatusLabel.setText("Main Thread Status: Completed in " + endTime + "ms with total size " + totalSize + " byte"));
             } catch (Exception e) {
                 e.printStackTrace();
             } finally {
@@ -97,4 +102,9 @@ public class MainController {
             }
         }).start();
     }
+
+    private synchronized void increment(long var) {
+        tempTotalSize += var;
+    }
 }
+
