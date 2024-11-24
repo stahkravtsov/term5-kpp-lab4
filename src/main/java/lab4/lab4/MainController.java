@@ -66,7 +66,7 @@ public class MainController {
     private void processIteration(int threadCount) {
         threadInfoList.clear();
         ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
-        List<Future<Long>> futures = new ArrayList<>();
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
 
         long sizePerThread = totalSize / threadCount;
         long startTime = System.currentTimeMillis();
@@ -76,31 +76,27 @@ public class MainController {
             ThreadInfo threadInfo = new ThreadInfo("Thread " + (i + 1));
             threadInfoList.add(threadInfo);
 
-            ThreadTask task = new ThreadTask(threadInfo, sizePerThread, () -> Platform.runLater(threadsTable::refresh));
+            CompletableFuture<Void> feature = CompletableFuture.supplyAsync(() -> {
+                ThreadTask task = new ThreadTask(threadInfo, sizePerThread, () -> Platform.runLater(threadsTable::refresh));
+                return task.call();
+            }, executorService).thenApply(result -> {
+                increment(result);
+                threadInfo.setResult(result);
+                return null;
+            });
 
-            futures.add(executorService.submit(task));
+            futures.add(feature);
         }
 
-        new Thread(() -> {
-            try {
-                for (int i = 0; i < threadCount; i++) {
-                    long result = futures.get(i).get();
-                    increment(result);
-                    ThreadInfo threadInfo = threadInfoList.get(i);
-                    threadInfo.setResult(result);
-                    Platform.runLater(threadsTable::refresh);
-                }
-
-                long endTime = -startTime + System.currentTimeMillis();
-
-                totalSize = tempTotalSize;
-                Platform.runLater(() -> mainThreadStatusLabel.setText("Main Thread Status: Completed in " + endTime + "ms with total size " + totalSize + " byte"));
-            } catch (Exception e) {
-                e.printStackTrace();
-            } finally {
-                executorService.shutdown();
-            }
-        }).start();
+        CompletableFuture
+                .allOf(futures.toArray(new CompletableFuture[0]))
+                .thenRun(() -> Platform.runLater(() -> {
+                    long endTime = -startTime + System.currentTimeMillis();
+                    totalSize = tempTotalSize;
+                    mainThreadStatusLabel.setText("Main Thread Status: Completed in " + endTime + "ms with total size " + totalSize + " byte");
+                    threadsTable.refresh();
+                    executorService.shutdownNow();
+                }));
     }
 
     private synchronized void increment(long var) {

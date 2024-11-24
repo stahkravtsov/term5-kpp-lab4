@@ -1,6 +1,7 @@
 package lab4.lab4;
 
 import java.util.concurrent.Callable;
+import java.util.function.Supplier;
 
 public class ThreadTask implements Callable<Long> {
     private final ThreadInfo threadInfo;
